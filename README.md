@@ -13,4 +13,13 @@ Packages needed to knit the file:
 * library(psych)
 * library(ggthemes)
 #### Additional Information
-To knit the file user should change the working directory - second chunk of code <my_source <- "C:/Users/Admin/Desktop/Renewable_Energy/DANE">. The data I am working with is included in DATE. Data comes straight from [Gapminder](https://www.gapminder.org/).
+To knit the file user should change the working directory - second chunk of the code <my_source <- "C:/Users/Admin/Desktop/Renewable_Energy/DANE">. The data I am working with is included in *DANE*. Data comes straight from [Gapminder](https://www.gapminder.org/).
+
+### Data Analysis Tasks [PL]
+#### Intro
+Simple statistical tasks completed by me in R Studio. 
+#### Packages
+Packages needed to knit the file:
+* library(dplyr)
+
+
