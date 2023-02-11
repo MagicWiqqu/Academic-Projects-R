@@ -1,0 +1,378 @@
+---
+title: "Projekt Zaliczeniowy"
+author: "Wiktoria Arendarczyk i Martyna Guzik"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<style>
+h1.title{
+  background: #22cc3e; 
+  background: linear-gradient(to right, #22cc3e 0%,#22c4cc 46%,#2250cc 100%);
+  filter: progid:DXImageTransform.Microsoft.gradient(                         startColorstr='#22cc3e', endColorstr='#b522cc',GradientType=1 );
+  color: white;
+  height: 100px;
+  display:flex;
+  align-items: center;
+  justify-content: center;
+  color: #191E63;
+}
+body{
+  color: #252A6F;
+  font-family: Calibri;
+  background-color: #F5F5F5;
+  text-align: justify;
+}
+</style>
+
+## Zadania część 1 - Zadanie 4
+
+```{r, include = FALSE}
+library(dplyr)
+```
+
+### Treść 
+
+Zbudować funkcję rozwiązującą zadanie 5 z zajęć 1, której argumentami będą szansa na zwycięstwo oraz aktualny wynik.
+
+Przypomnienie treści zadania 5 z zajęć 1:
+
+*Dwie drużyny, Pistons i Clippers, grają w siedmiomeczowej serii play-off. Rywalizacja toczy się do czterech zwycięstw, a drużyny są tak samo dobre. Jakie jest prawdopodobieństwo, że Pistons po przegraniu pierwszego meczu wygrają całą serię? Potwierdzić wyniki za pomocą symulacji Monte Carlo.*
+
+### Rozwiązanie 
+
+Zaczniemy od przytoczenia naszego rozwiązania zadania 5 z zajęć 1. To właśnie je będziemy przerabiać na funkcję. 
+
+```{r}
+set.seed(20)
+#Clippers to 0, Pistons to 1
+All <- c()
+for(i in 1:10000){
+  mecze <- c(0)
+  mecze <- c(mecze, 
+             sample(c(0,1), 6, replace = TRUE, prob = c(0.5, 0.5)))
+  sum <- sum(mecze) > 3
+  All <- c(All, as.vector(sum))
+}
+Probs <- sum(All) / 10000
+Probs
+```
+
+Jak widać rozwiązanie działa, i z lekcji nam wiadomo, że zwraca poprawny wynik. Teraz należy wyłącznie przebudować je na poprawną funkcję. 
+Z racji, że nie ma wymagań dotyczących budowy tej funkcji to zakładam, że aktualny wynik będzie wektorem, zawierającym dotychczasowy wynik w formie **c(x, x...)**, gdzie x będzie cyfrą 0 lub 1, w zależnośi kto wygrał. Clippers będą 0, a Pistons 1.
+**Należy sprawdzić**: 
+
+* Czy wektor wyniku jest mniejszy od 7 i czy zawiera **wyłącznie** cyfry 0 lub 1.
+
+* Czy prawdopodobieństwo **zawiera się** w przedziale (0,1). Nie jest on zamknięty, gdyż wtedy rozwiązywanie tego zadania nie miałoby sensu. 
+
+* Czy **pierwszy mecz** faktycznie **był przegrany przez Pistons** (tzn. czy pierwszy element wyniku jest równy 0).
+
+```{r}
+#Gdzie p to prawdopodobieństwo, w to aktualny wynik
+Mecz <- function(p, w){ 
+  if(p<=0 | p>=1){
+    stop("Błąd wpisywania prawdopodobieństwa!")
+  }
+  if(length(w) >=7){
+    stop("Błędny wektor wyniku, 
+         mecze już się zakończyły bądź jedt ich za dużo!")
+  }
+  if(length(w[w>=0 & w<=1]) != length(w)){
+    stop("Wartości w wektorze nie są z grupy {0, 1}!")
+  }
+  if(sum(trunc(w) == w) != length(w)){
+    stop("Liczby w wyniku nie są całkowite")
+  }
+  if(w[1] == 1){
+    stop("Aktualny wynik niepoprawny. Pierwszy mecz nie był przegrany przez Pistons!")
+  }
+  ile_rozegrano <- length(w)
+  All <- c()
+  for(i in 1:10000){
+    mecze <- c(w)
+    mecze <- c(mecze, 
+               sample(c(0,1), 7-ile_rozegrano, 
+                      replace = TRUE, prob = c(1-p, p)))
+    sum <- sum(mecze) > 3
+    All <- c(All, as.vector(sum))
+  }
+  Probs <- sum(All) / 10000
+  Probs
+}
+```
+
+Funkcja została zbudowana według ustalonych przez nas założeń. Czas ją przetestować. Przeprowadzimy kilka testów, aby pokazać, że nie przyjmie ona błędnych argumentów
+
+```{r, eval = FALSE}
+#Prawdopodobieństwo ze złego przedziału
+Mecz(12, c(0,1,0))
+```
+
+```{r, eval = FALSE}
+#Wektor o złej długości
+Mecz(0.5, c(0,1,0,0,1,0,0,0))
+```
+
+```{r, eval = FALSE}
+#Wektor ma zły zakres liczb
+Mecz(0.5, c(0,12))
+```
+
+```{r, eval = FALSE}
+#Wartości wektora aktualnego wyniku nie są liczbami całkowitymi
+Mecz(0.5, c(0.1, 0.23))
+```
+
+```{r, eval = FALSE}
+#Pistoni wygrali pierwszy mecz
+Mecz(0.5, c(1, 0))
+```
+
+Niestety musiałyśmy oznaczyć te chunki kodu za pomocą *eval = FALSE*, gdyż inaczej kod by się nie sknitował. Niemniej jednak funkcja rzeczywiście zaprzestaje działania.
+Teraz przetestujemy czy faktycznie działa dla poprawnych danych.
+
+```{r}
+set.seed(20)
+Mecz(0.5, c(0))
+```
+
+Jak widać funkcja zwraca to, co jest poprawne. Sprawdźmy teraz jeden wariant dodatkowy.
+
+```{r}
+set.seed(20)
+Mecz(0.9, c(0,1,0))
+```
+
+## Zadania część 2 - Zadanie 15 i 8
+
+### Zadanie 2 (Twierdzenie de Moivre'a - Laplace'a)
+
+#### Polecenie
+
+Zakładając, że co dziesiąty ankietowany udziela nieszczerych odpowiedzi. Obliczyć jakie jest prawdopodobieństwo, że wśród 2500 ankiet jest co najmniej 220 ankiet z nieprawdziwymi danymi.
+
+#### Rozwiązanie
+
+Mamy do czynienia z **rozkładem dwumianowym z parametrami n = 2500, p = 0,1.** Dla dostatecznie dużych n i p rozkład dwumianowy można przybliżyć rozkładem normalnym ~ N(np, sqrt(npq)). **W naszym przypadku przybliżać będziemy rozkładem ~N(2500 * 0,1; sqrt(2500 * 0,1 * 0,9)).** Interesuje nas prawdopodobieństwo, że co najmniej 220 ankiet jest fałszywych, tzn. P(X>=220) - gdyż u nas p (sukces) to znalezienie fałszywej ankiety.
+
+#### Rozwiązanie z odpowiednim Centralnym Twierdzeniem Granicznym
+
+```{r}
+m <- 2500 * 0.1
+s <- sqrt(2500*0.1*0.9)
+Probs <- pnorm(220, m, s, lower.tail = F)
+Probs
+```
+
+#### Rozwiązanie wykorzystujące symulację Monte Carlo
+
+```{r}
+All <- c()
+  for(i in 1:10000){
+    pracownicy <- sample(c(0,1), 2500, 
+                      replace = TRUE, prob = c(0.9, 0.1))
+    sum <- sum(pracownicy) >= 220 #Czy nie przyszło przynajmniej 13
+    All <- c(All, as.vector(sum))
+  }
+  Probs <- sum(All) / 10000
+Probs
+```
+
+### Zadanie 8 (Twierdzenie Lindeberga - Levy'ego)
+
+#### Polecenie
+
+Dzienne wpłaty na pewne konto wynoszą średnio 2,5 tys. zł przy odch. stand. 800zł. Natomiast wielkość dziennych wypłat ma rozkład o wartości oczekiwanej 2,2 tys. zł i odchyleniu stand. 1,1 tys. zł. Wpłaty i wypłaty dokonywane są niezależnie a konto ma nieograniczony debet. Jakie jest prawdopodobieństwo, że po 30 dniach na koncie będzie co najmniej 10 tys. zł?
+
+#### Rozwiązanie
+
+Mamy tutaj do czynienia z niewiadomymi, identycznymi rozkładami o wiadomych wartościach oczekiwanych i skończonych wariancjach. **Można więc zastosować twierdzenie Lindeberga - Levy'ego i obliczyć rozkład zmiennej X opisującej stan konta po 30 dniach.** Wiemy, że stan konta po 30 dniach to Xwpłat - Xwypłat w ciągu tych 30 dni.
+
+Rozkład wypłat po 30 dniach ma **asymptotyczny rozkład normalny ~N(30 * 2,2 ; 1,1 * sqrt(30))**
+
+Rozkład wpłat po 30 dniach ma **asymptotyczny rozkład normalny ~N(30 * 2,5 ; 0,8 * sqrt(30))**
+
+#### Rozwiązanie z odpowiednim Centralnym Twierdzeniem Granicznym
+
+```{r}
+m_wyplat <- 30*2.2
+s_wyplat <- 1.1 * sqrt(30)
+m_wplat <- 30*2.5
+s_wplat <- 0.8 * sqrt(30)
+m_konta <- m_wplat - m_wyplat
+s_konta <- sqrt(s_wplat^2 + s_wyplat^2)
+
+Probs <- pnorm(10, m_konta, s_konta, lower.tail = FALSE)
+Probs
+```
+
+#### Rozwiązanie wykorzystujące symulację Monte Carlo
+
+```{r}
+All <- c()
+m_wyplat <- 2.2
+s_wyplat <- 1.1
+m_wplat <- 2.5
+s_wplat <- 0.8
+m_konta <- m_wplat - m_wyplat
+s_konta <- sqrt(s_wplat^2 + s_wyplat^2)
+for(i in 1:1000){
+  Sn <- 0
+  for(i in 1:30){
+    Sn <- Sn + rnorm(30, m_konta, s_konta)
+  }
+  sum <- length(Sn[Sn>10])
+  probs <- sum / 30
+  All <- c(All, as.vector(probs))
+}
+Probs <- sum(All) / 1000
+Probs
+```
+
+## Zadania część 3 - Zadanie 3, 19, 20, 45
+
+### Zadanie 3 (test średniej)
+
+W zeszłym roku na skoczni w Zakopanem skoczkowie skakali średnio na odległość 105m. W tym roku, pierwszych 5 skoczków w kolejności alfabetycznej uzyskało następujące wyniki: 82, 112, 124, 134, 93. Na poziomie istotności 0.05 zweryfikować hipotezę, że średnia odległość skoków w tym roku będzie taka sama jak w roku ubiegłym, gdy hipotezą alternatywną jest, że w tym roku wynik będą lepsze.
+
+**Hipoteza zerowa: ** m = 105
+
+**Hipoteza alternatywna: ** m > 105 
+
+```{r}
+x <- c(82, 112, 124, 134, 93)
+test <- t.test(x, mu = 105, alternative = "greater") 
+#conf.level ma wartość 0.95 defaultowo
+test$statistic
+test$p.value
+```
+
+Widzimy, że na poziomie istotności 0.05 **nie ma podstaw, by odrzucić hipotezę zerową**, gdyż p-value jest na poziomie ~0.35. 
+
+### Zadanie 19 (test proporcji)
+
+15 osób, spośród badanej grupy 134 osób przychodzących do kina, kupiło popcorn. Czy na tej podstawie można stwierdzić, że istotnie więcej niż 10% przychodzących do kina kupuje popcorn? 
+
+*Przyjmuję wstępny poziom istotności na poziomie alfa = 0.05.*
+
+**Hipoteza zerowa: ** P_popcorn = 0.1
+
+**Hipoteza alternatywna: ** P_popcorn > 0.1
+
+```{r}
+test <- prop.test(15, 134, p = 0.1, correct = FALSE, alternative = "greater")
+test$p.value
+```
+
+Na poziomie istotności 0.05 **nie ma podstaw, żeby odrzucić hipotezę zerową**, gdyż p-value jest na poziomie ~0.32.
+
+### Zadanie 20 (test wariancji)
+
+Na podstawie analizy obserwacji 36 dni pracy bankomatu obliczono średnią dzienną wysokość wypłat równą 15,7tys. zł i odchylenie stand. równe 2,2tys. zł Czy na tej podstawie można stwierdzić, że odchylenie stand. dziennych wypłat w bankomatu jest istotnie większe niż 2tys. zł? <Czyli wariancja jest większa od 4 tyś?>
+
+*Z racji, że poziom istotności nie jest podany w poleceniu, to przyjmuję poziom istotności równy 0.05.* 
+
+**Hipoteza zerowa: ** Wariancja = 4 <w tysiącach>
+
+**Hipoteza alternatywna: ** Wariancja > 4
+
+```{r, include = FALSE}
+library(EnvStats)
+```
+
+```{r}
+set.seed(2000)
+proba <- rnorm(36, 15.7, 2.2)
+test <- varTest(proba, alternative = "greater", sigma.squared = 4)
+test$p.value
+```
+
+Na poziomie istotności równym 0.05, **możemy odrzucić hipotezę zerową** - wariancja jest istotnie większa od 4 tysięcy. P-value jest na poziomie ~0.046. 
+
+### Zadanie 45 (test proporcji dwóch prób)
+
+Na AGH 43 spośród 60 ankietowanych studentów pozytywnie oceniło pracę dziekanatu. Na UEK, analogicznych odpowiedzi udzieliło 68 spośród 100 ankietowanych studentów. Czy odsetek osób o dobrej opinii o pracy dziekanatów na obu uczelniach różni się istotnie?
+
+**Hipoteza zerowa: ** P_agh = P_uek
+
+**Hipoteza alternatywna: ** P_agh != P_uek
+
+```{r}
+test <- prop.test(x = c(43, 68), n = c(60, 100))
+test$p.value
+```
+
+Na poziomie istotności 0.05 **nie ma podstaw, aby odrzucić hipotezę zerową**. P-value jest na poziomie ~0.76.
+
+## Zadania część 4 - Zadanie 3 i 16
+
+### Zadanie 1 (Testy zgodności)
+
+Za pomocą testu chi-kwadrat zbadać, czy dane z poniższej tabeli mają rozkład Poissona:
+
+```{r}
+X <- seq(0, 4, 1)
+Licznosc <- c(75, 50, 35, 20, 10)
+Tabela_1 <- data.frame(X, Licznosc)
+Tabela_1
+```
+
+Z racji, że nie mamy narzuconej wartości lambda, to możemy sami ją wyznaczyć. Lambda w rozkładzie Poissona równoznaczna jest z wartością oczekiwaną, dlatego wystarczy policzyć EX dla naszej tabeli.
+
+```{r}
+library(dplyr)
+suma <- sum(Tabela_1$Licznosc)
+Tabela_1 <- Tabela_1 %>%
+  mutate(EX_i = Licznosc * X)
+Tabela_1
+EX <- sum(Tabela_1$EX_i)/sum(Tabela_1$Licznosc)
+EX
+```
+
+Nasze lambda równa się **1.157895**. Przeprowadźmy teraz test chi-kwadrat dopasowania, dla tej wartości.
+
+***Hipoteza 0 jest następująca:*** Rozkład naszej cechy ma rozkład Poissona.
+
+***Hipoteza 1 jest następująca:*** Rozkład naszej cechy nie ma rozkładu Poissona.
+
+```{r}
+observed <- Tabela_1$Licznosc
+expected <- sapply(Tabela_1$X, dpois, EX)
+(test <- chisq.test(observed, p = expected, rescale.p = T))
+test$p.value
+```
+
+Biorąc pod uwagę *p-value* oraz wartość *X-squared*, **to odrzucamy hipotezę zerową**. Rozkład nas różni się istotnie od rozkładu Poissona o lambda ~1,16.
+
+### Zadanie 10 (Testy niezależności)
+
+W tabeli zebrano wyniki pewnego testu składającego się z 30 pytań. Zbadać czy liczba udzielonych poprawnych odpowiedzi i wiek odpowiadającego są cechami niezależnymi.
+
+```{r}
+Popr_odp <- c("0 - 10", "10 - 20", "20 - 30")
+Wiek_20_30 <- c(23, 43, 20)
+Wiek_30_40 <- c(23, 56, 43)
+Wiek_40_50 <- c(34, 23, 13)
+
+Tabela_10 <- data.frame(Popr_odp, Wiek_20_30, Wiek_30_40, Wiek_40_50)
+Tabela_10
+```
+
+Teraz przeprowadzę test za pomocą funkcji `chisq.test`. 
+
+***Hipoteza 0 jest następująca:*** *Nie* istnieje zależność między wszystkimi zmiennymi.
+
+***Hipoteza 1 jest następująca:*** Istnieje zależność między jakimiś zmiennymi.
+
+```{r}
+chisq.test(Tabela_10[, 2:4])
+```
+
+Mamy 4 stopnie swobody, więc będziemy szukać wartości krytycznych dla rozkładu chi-kwadrat o stopniach swobody 4. **Nie ma tego podanego w poleceniu, dlatego przyjmę alfa na poziomie 0,05.** Według załączonych tablic wartość krytyczna dla chi-kwadrat o 4 stopniach swobody dla alfa równego 0.05 to **7,81**. X-squared >= od 7,81. **Odrzucamy hipotezę zerową.**
+
+W teście zawarte jest również *p-value*, które jest na poziomie mniejszym od 0.05, dlatego również za pomocą tej statystyki możemy stwierdzić, **że odrzucamy hipotezę zerową**.
