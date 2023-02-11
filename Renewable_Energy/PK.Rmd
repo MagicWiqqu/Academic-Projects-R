@@ -1,0 +1,1114 @@
+---
+title: "Projekt Końcowy"
+author: "Wiktoria Arendarczyk"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+<style>
+h1.title{
+  background: #22cc3e; 
+  background: linear-gradient(to right, #22cc3e 0%,#22c4cc 46%,#2250cc 100%);
+  filter: progid:DXImageTransform.Microsoft.gradient(                         startColorstr='#22cc3e', endColorstr='#b522cc',GradientType=1 );
+  color: white;
+  height: 100px;
+  display:flex;
+  align-items: center;
+  justify-content: center;
+  color: #191E63;
+}
+body{
+  color: #252A6F;
+  font-family: Calibri;
+  background-color: #F5F5F5;
+  text-align: justify;
+}
+</style>
+
+
+## Tematyka Projektu
+Postanowiłam skupić się na problemie produkcji energii ze źródeł nieodnawialnych jak i odnawialnych. Nasza planeta idzie w kierunku zagłady, nastaje więc pytanie, czy kraje cokolwiek z tym robią? Czy jesteśmy w stanie zapewnić rosnącej populacji dostęp do odnawialnych źródeł energii? Co utrudnia nam wprowadzenie odnawialnych źródeł energii?
+
+Postaram odpowiedzieć na pytania dotyczące wprowadzania energii odnawialnej, m.in zależność między stopniem rozwinięcia kraju, a wprowadzaniem źródeł energii odnawialnej - czy faktycznie kraje wysoko rozwinięte inwestują w źródła odnawialne? 
+
+## Przygotowanie danych
+Ze względu na zakres moich danych będę pracować na **latach 1991 - 2015** z odstępami co **dwa lata**. Przewiduje usunięcie państwa jeśli w datasetach pojawiają się jakieś wartości null. Nie jest to wielka strata, gdyż państw jest sporo, a odpadać będą państwa mniej znaczące - takie, które nie zawsze występują w datasetach.
+
+Problem z wybraniem datasetów był dość duży. Interesujące mnie datasety wyglądały jak szachownica, albo obejmowały bardzo krótki przedział czasowy. Większość brakujących wartości nie była tzw. *"missing at random"*. Były to zazwyczaj początkowe wartości lub też końcowe, co uniemożliwiało mi sensowne ich zastąpienie. Niemniej jednak jakoś sobie poradziłam i zebrałam kilka zmiennych.
+
+```{r, include = FALSE}
+library(dplyr)
+library(tidyr)
+library(mice)
+library(ggplot2)
+library(psych)
+library(ggthemes)
+
+my_source <- "C:/Users/Admin/Desktop/Renewable_Energy/DANE"
+```
+
+### PKP per capita
+Dane dotyczące **PKB per capita** są skorygowane pod względem różnic w sile nabywczej. PKB wyrażone jest w międzynarodowych dolarach, skorygowane pod względem inflacji bazując na roku 2017 - parytet siły nabywczej bazowany jest na [ICP](https://www.worldbank.org/en/programs/icp) z roku 2017. Czasami PKB wyrażane jest za pomocą formy tysięcznej, co muszę przerobić na normalny format liczbowy.
+
+```{r include = FALSE}
+setwd(my_source)
+PKB_per_cap <- read.csv("income_per_person_gdppercapita_ppp_inflation_adjusted.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+PKB_per_cap_lean <- gather(PKB_per_cap, Year, PKB_per_cap_val, -country)
+str(PKB_per_cap_lean)
+#Czyszczę 'Year' i zamieniam na numeric. To samo robię z 'PKB val'
+PKB_per_cap_lean$Year <- substring(PKB_per_cap_lean$Year, 2)
+PKB_per_cap_lean$Year <- as.numeric(PKB_per_cap_lean$Year)
+PKB_per_cap_lean$PKB_per_cap_val <- as.numeric(gsub("k", "e3",
+                                                    PKB_per_cap_lean$PKB_per_cap_val))
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+PKB_per_cap_lean <- PKB_per_cap_lean %>%
+  filter(Year %in% sekwencja)
+#Ewentualne wartości na?
+braki <- is.na(PKB_per_cap_lean) 
+sum(braki)
+```
+
+### Użycie energii odnawialnej
+Dane te przedstawiają **procent użycia energii odnawialnej** w stosunku do całkowitego użycia energii.
+
+```{r include = FALSE}
+setwd(my_source)
+Ren_energ_consumpt_perc <- read.csv("eg_fec_rnew_zs.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+Ren_energy_consumpt_perc_lean <- gather(Ren_energ_consumpt_perc, Year,
+                                        Ren_eng_consump_perc, - country)
+str(Ren_energy_consumpt_perc_lean)
+#Czyszczę 'Year'
+Ren_energy_consumpt_perc_lean$Year <- substring(Ren_energy_consumpt_perc_lean$Year, 2)
+Ren_energy_consumpt_perc_lean$Year <- as.numeric(Ren_energy_consumpt_perc_lean$Year)
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+Ren_energy_consumpt_perc_lean <- Ren_energy_consumpt_perc_lean %>%
+  filter(Year %in% sekwencja)
+#Wartości na?
+braki <- is.na(Ren_energy_consumpt_perc_lean) 
+sum(braki)
+#Są, ale co to dokładnie?
+na_ren <- Ren_energy_consumpt_perc_lean %>%
+  filter(is.na(Ren_eng_consump_perc))
+kraje <- unique(na_ren$country)
+kraje
+#Biorąc pod uwagę znaczenie tych państw na arenie międzynarodowej uważam, że mogę je ominąć
+Ren_energy_consumpt_perc_lean <- Ren_energy_consumpt_perc_lean %>%
+  filter(!(country %in% kraje))
+```
+
+### Emisja dwutlenku węgla (tony na osobę)
+Dane te przedstawiają **emisję dwutlenku węgla** pochodzącego ze **spalania paliw kopalnianych** w tonach na osobę (metryczne tony dwutlenku węgla na osobę).
+
+```{r include = FALSE}
+setwd(my_source)
+CO2_emission_tpp <- read.csv("co2_emissions_tonnes_per_person.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+CO2_emission_tpp_lean <- gather(CO2_emission_tpp, Year,
+                                        CO2_emission_tpp, - country)
+str(CO2_emission_tpp_lean)
+#Czyszczę 'Year'
+CO2_emission_tpp_lean$Year <- substring(CO2_emission_tpp_lean$Year, 2)
+CO2_emission_tpp_lean$Year <- as.numeric(CO2_emission_tpp_lean$Year)
+CO2_emission_tpp_lean$CO2_emission_tpp <- as.numeric(CO2_emission_tpp_lean$CO2_emission_tpp)
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+CO2_emission_tpp_lean <- CO2_emission_tpp_lean %>%
+  filter(Year %in% sekwencja)
+#Wartości null?
+braki <- is.na(CO2_emission_tpp_lean) 
+sum(braki)
+#Są, ale co to dokładnie?
+na_co2 <- CO2_emission_tpp_lean %>%
+  filter(is.na(CO2_emission_tpp))
+kraje <- unique(na_co2$country)
+kraje
+#Biorąc pod uwagę znaczenie tych państw na arenie międzynarodowej uważam, że mogę je ominąć.
+CO2_emission_tpp_lean <- CO2_emission_tpp_lean %>%
+  filter(!(country %in% kraje))
+```
+
+### HDI
+Dane dotyczące **HDI** skupiają się na trzech postawowych wartościach: *health level*, *educational level* i *living standard*. HDI zawiera wartości od 0 do 1. W praktyce państwa należą do trzech głównych grup:
+  
+* Kraje o wysokim HDI (0.7 - 1)
+* Kraje o średnim HDI (0.55 - 0.669)
+* Kraje o niskim HDI (0 - 0.549)
+
+```{r include = FALSE}
+setwd(my_source)
+HDI <- read.csv("hdi_human_development_index.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+HDI_lean <- gather(HDI, Year, HDI_val, - country)
+str(HDI_lean)
+#Czyszczę 'Year'
+HDI_lean$Year <- substring(HDI_lean$Year, 2)
+HDI_lean$Year <- as.numeric(HDI_lean$Year)
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+HDI_lean <- HDI_lean %>%
+  filter(Year %in% sekwencja)
+#Wartości na?
+braki <- is.na(HDI_lean) 
+sum(braki)
+#Są, ale co to dokładnie?
+na_hdi <- HDI_lean %>%
+  filter(is.na(HDI_val))
+kraje <- unique(na_hdi$country)
+kraje
+#Biorąc pod uwagę znaczenie tych państw na arenie międzynarodowej uważam, że mogę je ominąć (nawet jeśli stracę pare istotny państw to na tle wszystkich moich obserwacji nie będzie to miało większego znaczenia)
+HDI_lean <- HDI_lean %>%
+  filter(!(country %in% kraje))
+```
+
+### Współczynnik Giniego
+**Współczynnik Giniego** to miara stopnia nierówności dochodowej. Współczynnik ten przyjmuje wartości od 0 do 1 i często wyraża się go w procentach. Im jest on wyższy, tym większe możemy zaobserwować nierówności dochodowe w danym państwie. W tym zestawie danych **nie jest** on przedstawiony za pomocą procentów. 
+
+```{r include = FALSE}
+setwd(my_source)
+Gini_coef <- read.csv("gini.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+Gini_coef_lean <- gather(Gini_coef, Year, Gini_val, - country)
+str(Gini_coef_lean)
+#Czyszczę 'Year'
+Gini_coef_lean$Year <- substring(Gini_coef_lean$Year, 2)
+Gini_coef_lean$Year <- as.numeric(Gini_coef_lean$Year)
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+Gini_coef_lean <- Gini_coef_lean %>%
+  filter(Year %in% sekwencja)
+#Wartości na?
+braki <- is.na(Gini_coef_lean) 
+sum(braki)
+```
+
+### Populacja
+**Populacja** krajów na przestrzeni lat wyrażona w formatach liczbowych:
+
+* Tysięcznych (k), 
+* Milionowych (M),
+* Bilionowych (B) (pl. miliardowych).
+
+```{r include = FALSE}
+setwd(my_source)
+Pop <- read.csv("population_total.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+Pop_lean <- gather(Pop, Year, Pop_val, - country)
+str(Pop_lean)
+#Czyszczę 'Year'
+Pop_lean$Year <- substring(Pop_lean$Year, 2)
+Pop_lean$Year <- as.numeric(Pop_lean$Year)
+#Czyszczę problematyczne dane wyrażone za pomocą formatu XX.XXk, XX.XXM, XX.XXB
+Pop_lean$Pop_val <- ifelse(grepl('M', ignore.case = TRUE, Pop_lean$Pop_val),
+                          as.numeric(gsub("[$M]", "e6", Pop_lean$Pop_val)),
+                          ifelse(grepl('B', ignore.case = TRUE, Pop_lean$Pop_val),
+                                 as.numeric(gsub("[$B]", "e9", Pop_lean$Pop_val)),
+                                 as.numeric(gsub("[$k]", "e3", Pop_lean$Pop_val))))
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+Pop_lean <- Pop_lean %>%
+  filter(Year %in% sekwencja)
+#Wartości na?
+braki <- is.na(Pop_lean) 
+sum(braki)
+```
+
+### Średnia długość życia
+Ten dataset wyraża średnią długość życia jaką przeżyłoby dziecko jeśli tendencje dotyczące śmiertelności zostały by takie same. 
+
+```{r include = FALSE}
+setwd(my_source)
+Life_exp <- read.csv("life_expectancy_years.csv")
+#Zamieniam zestaw danych na zestaw danych wąskich
+Life_exp_lean <- gather(Life_exp, Year, Life_exp_val, - country)
+str(Life_exp_lean)
+#Czyszczę 'Year'
+Life_exp_lean$Year <- substring(Life_exp_lean$Year, 2)
+Life_exp_lean$Year <- as.numeric(Life_exp_lean$Year)
+#Wybieram interesujące mnie dane
+sekwencja <- seq(1991, 2015, 2)
+Life_exp_lean <- Life_exp_lean %>%
+  filter(Year %in% sekwencja)
+#Wartości na?
+braki <- is.na(Life_exp_lean) 
+sum(braki)
+```
+
+### Podział na kontynenty
+Postanowiłam uwzględnić podział na kontynenty, lub też w tym przypadku podział na **cztery regiony**. Jest to oficjalny podział stosowany przez gapmindera i zawiera on regiony: 
+
+* Asia 
+* Europe
+* Africa
+* Americas (Ameryka południowa + Ameryka środkowa + Ameryka północna)
+
+Dane sama zmieniałam na plik CSV, gdyż pobrany plik (*Data Geographies v2*) z gapmindera był w pliku excel i zawierał inne dodatkowe informacje poza kontynentami. Niemniej jednak postanowiłam zostawić wyłącznie kontynenty.
+
+```{r include = FALSE}
+setwd(my_source)
+Continents <- read.csv("Continents2.csv", sep = ";")
+Continents <- Continents %>%
+  mutate(Continent = ifelse(Continent == "asia", "Azja", 
+                            ifelse(Continent == "americas", "Ameryki",
+                                   ifelse(Continent == "europe", "Europa", "Afryka"))))
+#Wartości na?
+braki <- is.na(Continents) 
+sum(braki)
+```
+
+## Łączenie danych
+Teraz zajmę się łączeniem wybranych przeze mnie danych w jeden spójny dataset. Będę sprawdzać jakie kraje będą odpadały w trakcie łączenia (przez zastosowanie inner_joinów) tak aby scalanie datasetu przebiegało w sposób kontrolowany.
+
+```{r include = FALSE}
+#Najpierw zajmę się dołączeniem kontynentów do PKB. Sprawdzę czy wszystkie kraje z kontynentów pokrywają się z krajami z PKB.
+kraje1 <- unique(PKB_per_cap_lean$country)
+kraje2 <- unique(Continents$country)
+both <- setdiff(kraje1, kraje2)
+both
+#Różnice do zaakceptowania
+My_data <- Continents %>%
+  inner_join(PKB_per_cap_lean, by = "country")
+##Następny inner_join
+kraje1 <- unique(My_data$country)
+kraje2 <- unique(Gini_coef_lean$country)
+both <- setdiff(kraje1, kraje2)
+both
+My_data <- My_data %>%
+  inner_join(Gini_coef_lean, by = c("country", "Year"))
+##Następny inner_join
+kraje1 <- unique(My_data$country)
+kraje2 <- unique(Pop_lean$country)
+both <- setdiff(kraje1, kraje2)
+both
+My_data <- My_data %>%
+  inner_join(Pop_lean, by = c("country", "Year"))
+##Następny inner_join
+kraje1 <- unique(My_data$country)
+kraje2 <- unique(CO2_emission_tpp_lean$country)
+both <- setdiff(kraje1, kraje2)
+both
+My_data <- My_data %>%
+  inner_join(CO2_emission_tpp_lean, by = c("country", "Year"))
+##Następny inner_join
+kraje1 <- unique(My_data$country)
+kraje2 <- unique(Life_exp_lean$country)
+both <- setdiff(kraje1, kraje2)
+both
+My_data <- My_data %>%
+  inner_join(Life_exp_lean, by = c("country", "Year"))
+##Następny inner_join
+kraje1 <- unique(My_data$country)
+kraje2 <- unique(Ren_energy_consumpt_perc_lean$country)
+both <- setdiff(kraje1, kraje2)
+both
+My_data <- My_data %>%
+  inner_join(Ren_energy_consumpt_perc_lean, by = c("country", "Year"))
+##Następny inner_join
+kraje1 <- unique(My_data$country)
+kraje2 <- unique(HDI_lean$country)
+both <- setdiff(kraje1, kraje2)
+both
+My_data <- My_data %>%
+  inner_join(HDI_lean, by = c("country", "Year"))
+#Czy mamy jakieś braki danych?
+braki <- is.na(My_data) 
+sum(braki)
+#Ile zostało nam krajów?
+kraje <- unique(My_data$country)
+length(kraje) 
+#Czyli wystarczająco dużo, ale czy jest w miare dużo w każdym regionie?
+My_data_cont <- My_data %>%
+  group_by(Continent) %>%
+  summarize(count = n()/length(sekwencja))
+My_data_cont #Wystarczająca liczba obserwacji w każdym z kontynentów
+```
+
+## Prosta eksploracja danych
+W tej części wykonam prostą eksploracje stworzonego przeze mnie datasetu. Będą to proste statystyki opisowe i proste wykresy - tak jak wymaga polecenie.
+
+### Użycie odnawialnych źródeł energii
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_continents <- My_data %>%
+  group_by(Continent, Year) %>%
+  summarize(mean_ren = mean(Ren_eng_consump_perc), 
+            sd_ren = sd(Ren_eng_consump_perc),
+            wz = sd_ren/mean_ren)
+ggplot(My_data_continents, aes(x = Year, y = mean_ren, color = Continent)) +
+  geom_line(size = 1.5) + 
+  theme_bw() +
+  scale_color_colorblind() +
+  labs(title = "Średnie użycie odnawialnych źródeł energii", 
+      subtitle = "(wyrażone w % od całkowitego zużycia energii)",
+      color = "Kontynent") +
+  xlab("Rok") +
+  ylab("Procent od całkowitego zużycia energii") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+ggplot(My_data_continents, aes(x = Year, y = sd_ren, color = Continent)) + 
+  geom_line(size = 1.5) + 
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Odchylenie standardowe użycia odnawialnych źródeł energii", 
+       subtitle = "(wyrażone w % od całkowitego zużycia energii)",
+       color = "Kontynent") +
+  xlab("Rok") +
+  ylab("Procent od całkowitego zużycia energii") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Jak widać to w Afryce najwięcej używa się odnawialnych źródeł energii. Jest to dość zaskakujące, na pewno ja nie spodziewałam się takiego wyniku. Będę chciała to zdecydowanie później wyjaśnić - dlaczego Afryka przoduje w użyciu odnawialnych źródeł energii? Na pewno ma do tego warunki pogodowe - instalacja fotowoltaiczna musi być tam wyjątkowo korzystna.
+
+### Emisja CO2
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_CO2tpp <- My_data %>%
+  group_by(country) %>%
+  summarize(meanCO2 = mean(CO2_emission_tpp)) %>%
+  top_n(n = 5, wt = meanCO2)
+My_data_CO2tpp
+```
+
+Ta ramka danych wyraża top 5 krajów o największej średniej emisji dwutlenku węgla w przeliczeniu na tony na osobę. Na początku zdziwło mnie że są to akurat te kraje, ale po krótkim zastanowieniu wynik ten ma absolutny sens. Są to kraje arabskie stojące na produkcji ropy naftowej. Są one małe jeśli chodzi o populacje, a ich emisja dwutlenku węgla musi być wysoka przez rafinacje ropy naftowej. 
+
+Po krótkim researchu dowiedziałam się, że emisje CO2 w wyniku działania rafinerii mają dalej wzrastać. Zwiększający się popyt na ropę w związku ze wzrostem populacji sprawia, że wydobywa się coraw więcej ropy naftowej i nawet modernizacja rafinerii nie pozwoli na zmniejszenie emisji dwutenku węgla.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_CO2t <- My_data %>%
+  mutate(CO2_emission_t = CO2_emission_tpp * Pop_val) %>%
+  group_by(country) %>%
+  summarize(meanCO2 = mean(CO2_emission_t)) %>%
+  top_n(5, wt = meanCO2)
+My_data_CO2t
+```
+
+Ta ramka danych wyraża top 5 krajów o najwyższej średniej emisji CO2 (w tonach). Cztery z tych krajów kompletnie mnie nie dziwią - Chiny, Indie, Rosja i USA były do przewidzenia. Co natomiast mnie zdziwiło to Japonia na trzecim miejscu. Jest to kraj, który ja znam z dość solidnego podejścia do ekologii i dbania o środowisko naturalne. Japończycy od dziecka uczą się chociażby skrupulatnego sortowania odpadów i poszanowania natury. Niemniej jednak warto mieć na uwadze fakt, że ich kraj zwiększył swoje uzależnienie od paliw kopalnych po katastrofie w Fukushimie.  
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_CO2 <- My_data %>%
+  filter(Year %in% c(1991, 2015)) %>%
+  select(country, Continent, Year, CO2_emission_tpp) %>%
+  spread(Year, CO2_emission_tpp) %>%
+  rename(CO2tpp_1991 = "1991",
+        CO2tpp_2015 = "2015")
+
+ggplot(My_data_CO2, aes(x = CO2tpp_1991, y = CO2tpp_2015, color = Continent)) + 
+  geom_point(size = 3, alpha = 0.7) +
+  theme_bw() +
+  scale_color_colorblind() +
+  geom_abline(slope = 1, intercept = 0, color = "grey") + 
+  labs(title = "Zmiana emisji dwutlenku węgla per capita",
+       color = "Kontynent") +
+  xlab("Emisja dwutlenku węgla per capita w 1991 roku (t)") +
+  ylab("Emisja dwutlenku węgla per capita w 2015 roku (t)")
+  
+```
+
+```{r}
+My_data_CO2 <- My_data %>%
+  group_by(Continent) %>%
+  summarize(mean_CO2 = mean(CO2_emission_tpp), 
+            sd_CO2 = sd(CO2_emission_tpp),
+            wz = sd_CO2/mean_CO2)
+My_data_CO2
+```
+
+Jak widać istnieje duże odchylenie standardowe w każdym z kontynentów. Współczynnik  zmienności dla Europy jest stosunkowo niski, natomiast najwyższy jest w Afryce. Oznacza to że w afryce występują największe nierówności jeśli chodzi o emisję CO2.
+
+### Populacja
+
+```{r}
+My_data_pop <- My_data %>%
+  mutate(Pop_val = Pop_val / 1000000)
+summary(My_data_pop$Pop_val)
+```
+
+Prosta analiza za pomocą statystyk opisowych mówi mi wszystko co muszę wiedzieć jeśli chodzi o populację. Najmniejsze badane przeze mnie państwo ma tylko 56 tysięcy mieszkańców, największe zaś 1.5 miliarda. Jest to duża rozbieżność i zastanawia mnie jak ostatecznie wpłynie to na implementacje odnawialnych źródeł energii. Z ciekawości wypiszę kraje o średniej najniższej liczbie obywateli.
+
+```{r}
+My_data_pop <- My_data %>%
+  group_by(country) %>%
+  summarize(mean_pop = mean(Pop_val)) %>%
+  top_n(-5, wt = mean_pop)
+My_data_pop
+```
+
+### PKB
+
+```{r}
+summary(My_data$PKB_per_cap_val)
+PKB_sd <- sd(My_data$PKB_per_cap_val)
+PKB_sd
+My_data_pkb <- My_data %>%
+  group_by(Continent) %>%
+  summarise(mean = mean(PKB_per_cap_val), sd = sd(PKB_per_cap_val))
+My_data_pkb
+```
+
+Jeśli chodzi o PKB to sprawa jest dość prosta. Istnieje duże odchylenie standardowe całościowe - to normalne, istnieją bardzo bogate jak i bardzo biedne państwa. Afryka to najbiedniejszy region, natomiast najbogatszym jest Europa. Dodatkowo w Azji widać największe różnice w PKB.
+
+### HDI
+
+```{r}
+summary(HDI_lean$HDI_val)
+```
+
+Podobnie jak w PKB, HDI posiada bardzo zróżnicowane wartości. Przedstawię to jeszcze na szybkiej wizualizacji.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_HDI <- My_data %>%
+  group_by(Continent, Year) %>%
+  summarize(mean_HDI = mean(HDI_val))
+ggplot(My_data_HDI, aes(x = as.factor(Continent), y = mean_HDI, color = Continent)) +
+  geom_boxplot() + 
+  theme_bw() + 
+  scale_color_colorblind() +
+  theme(legend.position="none") + 
+  labs(title = "Średnia wartość HDI na kontynentach",
+       subtitle = "Uśredniono cały badany okres", 
+       color = "Kontynent") +
+  xlab("Kontynent") +
+  ylab("HDI") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+### Współczynnik Giniego
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_Gini <- My_data %>%
+  group_by(Continent, Year) %>%
+  summarize(mean_gini = mean(Gini_val))
+ggplot(My_data_Gini, aes(x = Year, y = mean_gini, color = Continent)) + 
+  geom_line(size = 1.5) + 
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Średni Współczynnik Giniego w zależności od kontynentu", 
+       color = "Kontynent") +
+  xlab("Rok") +
+  ylab("Współczynnik Giniego") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Jak widać Współczynnik Giniego w Europie w miare oscyluje w tej samej wartości, aczkolwiek można było zauważyć gwałtowny wzrost latach 1990-1995. Sytuacja wzrostowa również może być zauważona w Amerykach, aczkolwiek tam wzrost trwał do 2000 roku. W Afryce można zauważyć stabilny spadek. Wzrost w latach 1990-1995(2000 - Ameryki) można tłumaczyć sytuacją ekonomiczną i polityczną na świecie. W latach 1990 upadł Związek Radziecki, wzrosła globalizacja, użycie internetu. Ekonomiczne boom mogło sprawić, że wzrosły nierówności, gdyż niektóre osoby na tym ogromnie skorzystały, a inne wręcz przeciwnie. 
+
+### Średnia długość życia
+
+```{r}
+My_data_life <- My_data %>%
+  group_by(Continent) %>%
+  summarize(mean = mean(Life_exp_val), sd = sd(Life_exp_val))
+My_data_life
+```
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_life <- My_data %>%
+  filter(Year == 2015)
+ggplot(My_data_life, aes(x = Life_exp_val, fill = Continent)) + 
+  geom_density(alpha = 0.5) +
+  theme_bw() + 
+  labs(title = "Gęstość średniej długości życia w 2015 roku", 
+       fill = "Kontynent") +
+  xlab("Średnia liczba lat") +
+  ylab("Gęstość") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Jak widać w Afryce żyje się najkrócej, bo najczęściej około 64 lat, natomiast najdłużej żyje się w Europie, gdzie przeżyć można najczęściej około 82 lat. 
+
+## Pytania badawcze 
+
+### W roku 2015 państwa o wysokim PKB na swoich kontynentach przodują jeśli chodzi o wykorzystanie energii odnawialnej.
+
+Chciałabym sprawdzić tę hipotezę. Być może jestem zbyt optymistyczna, ale wydaje mi się, że w 2015 roku **kraje o wysokim PKB** powinny mieć już w **wysoki procent wykorzystania odnawialnych źródeł energii** w stosunku do całkowitej wyprodukowanej energii. Są to państwa, które powinny mieć środki do finansowania rozwoju odnawialnych źródeł energii. Analogicznie, państwa o niskim PKB nie będą inwestowały w odnawialne źródła energii.
+
+Zacznę od obliczenia średniego użycia odnawialnych źródeł energii w stosunku do całkowitej wyprodukowanej energii na danym kontynencie w 2015 roku. Dodatkowo przedstawie rozkład średniego użycia odnawialnych źródeł energii na wykresie pudełkowym, gdzie kropka symbolizuje średnią.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data1 <- My_data %>%
+  filter(Year == 2015)
+ggplot(My_data1, aes(x = Continent, y = Ren_eng_consump_perc, color = Continent)) +     geom_boxplot() + 
+  theme_bw() + 
+  scale_color_colorblind() +
+  stat_summary(fun=mean, geom="point", shape=18, size=4) + 
+  labs(title = "Użycie energii odnawialnej",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitego zużycia energii") +
+  xlab("Kontynent") + 
+  ylab("Użycie energii odnawialnej (w %)") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.position="none")
+```
+
+Jak widzimy w Afryce występuje największe średnie użycie odnawialnych źródeł energii, co już dowodzi, że użycie odnawialnych źródeł energii nie zależy od samej wysokości PKB. **Pytanie jednak, czy wysokie PKB na tle kontynentu sprawia, że państwo również ma wysokie zużycie odnawialnych źródeł energii?**
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_1 <- My_data %>%
+  filter(Year == 2015) %>%
+  mutate(Pop_val_M = Pop_val / 1000000) %>%
+  group_by(Continent) %>%
+  mutate(mean_ren = mean(Ren_eng_consump_perc)) %>%
+  top_n(3, wt = PKB_per_cap_val) %>% 
+  mutate(dif = Ren_eng_consump_perc - mean_ren,
+         position = ifelse(dif > 0, 
+                           "A", 
+                           "B")) %>%
+  arrange(desc(dif)) %>%
+  ungroup() %>%
+  mutate(country_f = factor(country, levels = country))
+
+ggplot(My_data_1, aes(x = country_f, y = dif)) +
+  geom_bar(stat='identity', aes(fill=position), width=.5)  +
+  scale_fill_manual(name="Odchylenie", 
+                    labels = c("Powyżej średniej", "Poniżej średniej"), 
+                    values = c("A"="#009E73", "B"="#D55E00")) + 
+  theme_bw() +
+  coord_flip() +
+  labs(title = "Zużycie odnawialnych źródeł energii w krajach o 
+       największym PKB na kontynencie w roku 2015",
+       subtitle = "Dane przestawione w stosunku do średniej zużycia 
+       odnawialnych źródeł energii na danym kontynencie") +
+  ylab("Odchylenie") +
+  xlab("Kraj") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+**Jak widać moja hipoteza absolutnie nie jest prawidłowa**, co mnie bardzo zasmuciło. Państwa bogate nie mają wysokiego użycia energii odnawialnej. Wyjątkami są tutaj Szwajcaria i Gabon, przy czym energia w Gabon niemal w 80% pochodzi od źródeł odnawialnych.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_1 <- My_data %>%
+  filter(country %in% c("Gabon", "Switzerland"))
+
+ggplot(My_data_1, aes(x = Year, y = Ren_eng_consump_perc, color = country)) +
+  geom_line(size = 1.5) +
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Użycie odnawialnych źródeł energii w roku 2015",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii",
+       color = "Kraj") +
+  xlab("Rok") +
+  ylab("Użycie odnawialnych źródeł energii (%)") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Co mnie cieszy to fakt, że Szwajcaria powoli zwiększa użycie odnawialnych źródeł energii, a Gabon w miare utrzymuje swój wysoki procent użycia odnawialnych źródeł energii. 
+
+### Kraje o obecnie niskim HDI w moim badanym okresie utrzymywały wysokie użycie odnawialnych źródeł energii. 
+
+Po zderzeniu się ze ścianą i określeniu, że **kraje o wysokim PKB** wcale **nie przodują** jeśli chodzi o użycie odnawialnych źródeł energii, to spróbuję sprawdzić hipotezę, że kraje o obecnie **niskim HDI** w moim badanym okresie średnio utrzymywały wysokie użycie odnawialnych źródeł energii.
+
+*Podział HDI na stopnie "wysoki", "średni" i "niski" omówiłam już podczas przygotowania danych.*
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_2 <- My_data %>%
+  mutate(position = ifelse(HDI_val > 0.7, "Wysokie",
+                           ifelse(HDI_val > 0.55, "Średnie", "Niskie"))) %>%
+  mutate(position = factor(position, levels = c("Wysokie", "Średnie", "Niskie"))) %>%
+  group_by(position, Year) %>%
+  summarize(mean_ren = mean(Ren_eng_consump_perc))
+
+ggplot(My_data_2, aes(x = Year, y = mean_ren, color = position)) + 
+  geom_line(size = 1.5) + 
+  theme_bw() + 
+  scale_color_manual(values=c("#009E73", "#F0E442", "#D55E00")) +
+  labs(title = "Użycie odnawialnych źródeł energii",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii",
+       color = "HDI") +
+  xlab("Rok") +
+  ylab("Użycie odnawialnych źródeł energii (%)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+**Moja hipoteza się potwierdziła** i kraje o niskim HDI w moim badanym okresie utrzymywały wysoki poziom użycia odnawialnych źródeł energii. Wynikać to może z faktu, że kraje o wysokim HDI i wcześniej wysokim PKB stoją na źródłach nieodnawialnych. Przez lata eksploatowały one swoje surowce naturalne i na nich opierały swoją energetykę, gdyż była ona dla nich darmowa - nie musieli oni kupować jej od innych krajów, a wręcz przeciwnie, to oni sprzedawali je innym. Kraje o niskim HDI i PKB nie mogły sobie na to pozwolić, musiały szukać one alternatyw w postaci odnawialnych źródeł energii. **Chciałabym dowiedzieć się skąd pochodzą kraje o niskim HDI.**
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_2 <- My_data %>%
+  mutate(position = ifelse(HDI_val > 0.7, "Wysokie",
+                           ifelse(HDI_val > 0.55, "Średnie", "Niskie"))) %>%
+  mutate(position = factor(position, levels = c("Wysokie", "Średnie", "Niskie"))) %>%
+  filter(Year == 2015)
+
+ggplot(My_data_2, aes(x = Continent, fill = position)) + 
+  geom_bar(position = "fill", alpha = 0.9) + 
+  theme_bw() + 
+  scale_fill_manual(values=c("#009E73", "#F0E442", "#D55E00")) + 
+  labs(title = "Proporcje HDI w zależności od kontynentu",
+       fill = "HDI") +
+  xlab("Kontynent") +
+  ylab("Proporcja") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Tak jak można się spodziewać, w Afryce najwięcej krajów, bo aż około 55%, ma niskie HDI. Reszta znajduje się w Amerykach (~5% krajów) i Azji (~12% krajów). **Zastanawia mnie, czy któryś kontynent wypada lepiej na tle innych, czy może wysoki procent użycia odnawialnych źródeł energii jest cechą wspólną dla krajów o niskim HDI.**
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_2 <- My_data %>%
+  mutate(position = ifelse(HDI_val > 0.7, "Wysokie",
+                           ifelse(HDI_val > 0.55, "Średnie", "Niskie"))) %>%
+  filter(position == "Niskie") %>%
+  group_by(Continent, Year) %>%
+  summarize(mean_ren = mean(Ren_eng_consump_perc))
+
+ggplot(My_data_2, aes(x = Year, y = mean_ren, color = Continent)) +
+  geom_line(size = 1.5) + 
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o niskim HDI",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii",
+       color = "Kontynent") +
+  xlab("Rok") +
+  ylab("Użycie odnawialnych źródeł energii (%)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Mój wykres pokazuje, że **kraje Ameryk** oraz **Afryki** o niskim HDI miały w miarę porównywalny średni procent użycia odnawialnych źródeł energii. Azja natomiast cechuje się niższym średnim procentem użycia odnawialnych źródeł energii. Od roku 2005 zaliczyła ona mocny spadek, nastaje jednak pytanie: dlaczego? Mam pewną hipotezę i właśnie nią teraz się zajmę.
+
+### Kraje, w których przyrost populacji w badanym okresie był wysoki jednocześnie miały spadek użycia odnawialnych źródeł energii.
+
+Przypadek **Azji** i jej gwałtownego **spadku** użycia odnawialnych źródeł energii naprowadził mnie na trop dotyczący zależności przyrostu populacji, a przyrostu użycia odnawialnych źródeł energii. Jak wiadomo w Azji obecnie jest wysoki przyrost naturalny, stąd moje podejrzenie. Uważam, że zależność ta jest ujemna, tzn. przyrost dodatni populacji będzie wiązał się z zanotowanym przyrostem ujemnym w użyciu odnawialnych źródeł energii. Przygotuję teraz dataset, na którym będę pracować i **zwizualizuję moje wyniki z podziałem na kontynenty**, gdyż bardzo interesuje mnie sytuacja w Azji.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_3a <- My_data %>%
+  filter(Year == 1991) %>%
+  select(country, Continent, Pop_val, Ren_eng_consump_perc)
+My_data_3b <- My_data %>%
+  filter(Year == 2015) %>%
+  select(country, Continent, Pop_val, Ren_eng_consump_perc)
+My_data_3 <- My_data_3a %>%
+  inner_join(My_data_3b, by = c("country", "Continent"), suffix = c(".1991", ".2015"))
+My_data_3 <- My_data_3 %>%
+  mutate(Pop_val.2015 = Pop_val.2015 / 1000000,
+         Pop_val.1991 = Pop_val.1991 / 1000000) %>%
+  mutate(pop_growth = Pop_val.2015 - Pop_val.1991,
+         ren_growth = Ren_eng_consump_perc.2015 - Ren_eng_consump_perc.1991) %>%
+  arrange(desc(ren_growth)) 
+
+ggplot(My_data_3, aes(x = ren_growth, y = pop_growth, color = Continent)) + 
+  geom_point(size = 2, alpha = 0.7) + 
+  facet_wrap(~Continent) +
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o niskim HDI",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii")+
+  xlab("Przyrost użycia energii odnawialnej (w punktach procentowych)") +
+  ylab("Przyrost populacji (w milionach)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.position="none")
+```
+
+Jak widać moja hipoteza **nie jest** do końca poprawna. O ile w badanej Azji kraje, w których zaobserwowano przyrost populacji zmniejszyły użycie energii odnawialnej, to nie istnieje zależność mówiąca, że im większy przyrost populacji, tym większy spadek użycia odnawialnych źródeł energii. Co można zaobserwować w moim wykresie to fakt, że poza Europą, która faktycznie zwiększa użycie energii odnawialnej, to inne kontynenty nie idą za nią w ślad. Wręcz przeciwnie - istnieje tendencja spadkowa jeśli chodzi o użycie energii odnawialnej. **Dlaczego tak się dzieje?** Przeciętna osoba mogłaby się spodziewać wzrostu użycia odnawialych źródeł energii na całym świecie w związku z nagłaśnianiem problemu jakim jest kryzys środowiskowy. 
+
+Niemniej jednak interesują mnie państwa Azji, które zanotowały duży spadek użycia energii odnawialnej (większy niż 20), być może przybliżenie ich spowoduje nasunięcie się jakichś wniosków.
+
+```{r}
+My_data_3 <- My_data_3 %>%
+  filter(ren_growth < -20, Continent == "Azja")
+kraje <- My_data_3$country
+kraje
+```
+
+Kraje te wyglądają na kraje **prężnie rozwijające się lub mało rozwinięte**. Ich wskaźnik HDI powinien być w grupie krajów średnio i nisko rozwiniętych. Kraje rozwijające się będą zwiększać swoje PKB, populację i przemysł. Nie będą one zastanawiać się nad środowiskiem, gdyż mają ważniejsze sprawy na głowie. Będą one mniej opierać się na odnawialnych źródłach energii, a bardziej na eksploatacji własnych surowców, które będą w stanie zaspokoić ich rosnące potrzeby energetyczne.
+
+### Kraje średnio i nisko rozwinięte z wysokim przyrostem HDI będą zmniejszać użycie energii odnawialnej.
+
+Hipoteza ta wynika z wniosków z podpunktu poprzedniego. Kraje **prężnie rozwijające się** posiadające obecnie niskie lub średnie HDI będą stopniowo zmniejszać użycie energii odnawialnej. 
+
+Kraje nisko rozwinięte najprawdopodobniej dostały wiele dofinansowań od krajów wysoko rozwiniętych co pozwoliło im na rozwinięcie infrastruktury energii odnawialnej - panele słoneczne, hydroelektrownie, elektrownie wiatrowe -, gdyż o ile wytworzenie ich jest drogie, tak utrzymanie niskie i nie wymagają one stabilnych dostaw surowca, który pozwoli im na wytworzenie energii. Surowcem w ich przypadku jest **darmowa matka natura**. Jest to sensowne użycie nieodpłatnej dotacji od bogatych państw. 
+
+W momencie, gdy kraj taki przeżywa rozwój przemysłu i populacji, to odkrywa on własne surowce nieodnawialne - wtedy to one są szybką odpowiedzią na zwiększające się potrzeby energetyczne rosnącej populacji. Łatwiej jest postawić kopalnie węgla niż farmę słoneczną. 
+
+Sprawdźmy więc moją hiopotezę.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_HDI <- My_data %>%
+  mutate(position = ifelse(HDI_val > 0.7, "Wysokie",
+                           ifelse(HDI_val > 0.55, "Średnie", "Niskie")))
+My_data_4a <- My_data_HDI %>%
+  filter(Year == 1991, position %in% c("Niskie", "Średnie")) %>%
+  select(country, Continent, HDI_val, Ren_eng_consump_perc, position)
+My_data_4b <- My_data_HDI %>%
+  filter(Year == 2015, position %in% c("Niskie", "Średnie")) %>%
+  select(country, Continent, HDI_val, Ren_eng_consump_perc, position)
+My_data_4 <- My_data_4a %>%
+  inner_join(My_data_4b, by = c("country", "Continent"), suffix = c(".1991", ".2015"))
+My_data_4 <- My_data_4 %>%
+  mutate(HDI_growth = HDI_val.2015 - HDI_val.1991,
+         ren_growth = Ren_eng_consump_perc.2015 - Ren_eng_consump_perc.1991) %>%
+  arrange(desc(ren_growth)) 
+
+ggplot(My_data_4, aes(x = ren_growth, y = HDI_growth, color = Continent)) + 
+  geom_point(size = 2, alpha = 0.7) + 
+  facet_wrap(~Continent) +
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o niskim i średnim HDI",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii")+
+  xlab("Przyrost użycia energii odnawialnej (w punktach procentowych)") +
+  ylab("Przyrost HDI") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.position="none")
+```
+
+Wykres ten obrazuje wszystkie państwa nisko i średnio rozwinięte. Gdy się przyjrzymy to możemy zauważyć zależność ujemną w Azji. Niemniej jednak, interesują mnie państwa, w których przyrost ten był stosunkowo wysoki - powiedzmy, że większy niż mediana. Sprawdzę te wartości dla poszczególnych kontynentów.
+
+```{r}
+Quantile <- My_data_4 %>%
+  group_by(Continent) %>%
+  summarize(median = quantile(HDI_growth, probs = 0.5))
+Quantile
+```
+
+Mając te wartości zaprezentuję teraz wykres odznaczający te kraje, w których przyrost ten był większy niż mediana i dokonam oceny mojej hipotezy.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_4_median <- My_data_4 %>%
+  group_by(Continent) %>%
+  mutate(median = quantile(HDI_growth, probs = 0.5)) %>%
+  ungroup() %>%
+  mutate(poz = ifelse(HDI_growth > median, "Powyżej mediany", "Poniżej mediany"))
+
+ggplot(My_data_4_median, aes(x = ren_growth, y = HDI_growth, color = poz)) + 
+  geom_point(size = 2, alpha = 0.7) + 
+  facet_wrap(~Continent) +
+  theme_bw() + 
+  scale_color_manual(values=c("#D55E00", "#009E73")) +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o niskim i średnim HDI",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii",
+       color = "Wzrost HDI")+
+  xlab("Przyrost użycia energii odnawialnej (w punktach procentowych)") +
+  ylab("Przyrost HDI") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+Jak widać moja hipoteza okazała się być **poprawna**. O ile występują odstępstwa od reguły, tak większość krajów prężnie rozwijających się zmniejsza użycie energii odnawialnej. Z ciekawości jedynie sprawdzę które państwa dokładnie odsępują od reguły i rozrysuje ich użycie energii odnawialnej w badanym okresie.
+
+```{r out.width = '70%', fig.align = 'center'}
+Kraje <- My_data_4_median %>%
+  filter(HDI_growth > median, ren_growth > 0) %>%
+  select(country)
+Kraje <- as.vector(Kraje$country)
+Kraje_plot <- My_data %>%
+  filter(country %in% Kraje)
+
+ggplot(Kraje_plot, aes(x = Year, y = Ren_eng_consump_perc, color = country)) +         geom_line(size = 1.5) +
+  theme_bw() +
+  scale_color_colorblind() +
+  labs(title = "Użycie energii odnawialnej wybranych państw",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii",
+       color = "Kraj")+
+  xlab("Rok") +
+  ylab("Użycie energii odnawialnej") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Afganistan i jego mocne wzrosty i upadki przykuły moją uwagę. W badanym okresie Afganistan przeżywał trudne chwile - stopniowa islamizacja kraju, wojna domowa, islamski emirat, aż w końcu interwencja NATO. 
+
+Po krótkim doedukowaniu się na temat historii energetycznej Afganistanu dowiedziałam się, że kraj ten **w roku 2004** postanowił, że odpowiedzią na zwiększające się zapotrzebowanie energii będzie import energii z krajów sąsiadujących. Wyjaśnia to gwałtowny spadek w procencie użycia energii odnawialnej w stosunku do całkowitego użycia energii. **W roku 2011** zaś nastąpił rozwój infrastruktury hydroelektrowni, co pozwoliło na nieznaczne zmniejszenie importu energii i zastąpienie jej energią odnawialną. 
+
+Spadek **w roku 2001** można wyjaśnić nieznacznym zwiększeniem produkcji energii z własnych źródeł nieodnawialnych.
+
+Dla zakończenia tematu postanowiłam również zobrazować państwa wysoko wysoko rozwinięte i ich zmiany w użyciu odnawialnych źródeł energii. *Nie będę uwzględniać kodu, gdyż jest on analogiczny do kodu z krajami nisko i średnio rozwiniętymi - z tym wyjątkiem że filtruje teraz po krajach wysoko rozwiniętych.*
+
+```{r out.width = '70%', fig.align = 'center', echo = FALSE}
+My_data_4c <- My_data_HDI %>%
+  filter(Year == 1991, position == "Wysokie") %>%
+  select(country, Continent, HDI_val, Ren_eng_consump_perc, position)
+My_data_4d <- My_data_HDI %>%
+  filter(Year == 2015, position == "Wysokie") %>%
+  select(country, Continent, HDI_val, Ren_eng_consump_perc, position)
+My_data_4 <- My_data_4c %>%
+  inner_join(My_data_4d, by = c("country", "Continent"), suffix = c(".1991", ".2015"))
+My_data_4 <- My_data_4 %>%
+  mutate(HDI_growth = HDI_val.2015 - HDI_val.1991,
+         ren_growth = Ren_eng_consump_perc.2015 - Ren_eng_consump_perc.1991) %>%
+  arrange(desc(ren_growth)) 
+
+ggplot(My_data_4, aes(x = ren_growth, y = HDI_growth, color = Continent)) + 
+  geom_point(size = 2, alpha = 0.7) + 
+  facet_wrap(~Continent) +
+  theme_bw() + 
+  scale_color_colorblind() +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o wysokim HDI",
+       subtitle = "Wyrażone w procentach w stosunku do całkowitej produkcji energii")+
+  xlab("Przyrost użycia energii odnawialnej (w punktach procentowych)") +
+  ylab("Przyrost HDI") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.position="none")
+```
+
+```{r}
+Stat <- My_data_4 %>%
+  group_by(Continent) %>%
+  summarize(mean = mean(ren_growth), sd = sd(ren_growth), wz = sd / mean)
+Stat
+```
+
+Jak widać w krajach wysoko rozwiniętych sytuacja preyzentuje się różnie na różnych kontynentach. W Europie zauważyć można silny wzrost użycia energii odnawialnej, natomiast w Azji średnia wzrostu jest na poziomie 0.3, co mówi, że ani nie zwiększają one użycia energii odnawialnej, ani też nie zmniejszają, co jest dość dobrą informacją. W Amerykach średnią zaniżają dwa państwa, z ciekawości sprawdzę które. 
+
+```{r}
+Kraje <- My_data_4 %>%
+  filter(ren_growth < 0, Continent == "Ameryki") %>%
+  select(country)
+Kraje
+```
+
+**Barbados** to jedna z najgęściej zaludnionych wysp na świecie, więc nie dziwi mnie fakt, że zaniżają oni średnią. Mają oni rosnący problem z zanieczyszczaniem środowiska naturalnego.
+
+### Kraje o wysokim HDI i dużym Współczynnikiem Giniego będą miały większe użycie energii odnawialnej niż kontynentalna średnia krajów o wysokim HDI.
+
+Naszła mnie myśl, że kraje o **Współczynniku Giniego wysokim** (tzn. większym niż 75% badanych krajów) jedocześnie o **wysokim HDI** będą miały większe użycie energii odnawialnej. Dlaczego? Wysoki Współczynnik Giniego wskazuje na duże różnice dochodowe, oznacza to, że istnieje duża przepaść między bogatymi obywatelami, a biednymi. Biedni obywatele będą używać mniej energii, co sprawia, że w kraju istnieje mniejsze zapotrzebowanie na energię niż w reszcie krajów o wysokim HDI. Dodatkowo obywatele mieszkający w *slumsach* niejednokrotnie nie mają dostępu do energii elektrycznej oraz czystej wody. 
+
+Z poprzednich hipotez dowiedziałam się, że spadek użycia energii odnawialnej wraz ze wzrostem HDI wynika, m.in ze zwiększenia zapotrzebowania na energię (używaną zarówno w przemyśle jak i przez zwykłych obywateli). Kraje o wysokim Współczynniku Giniego będą tutaj odstawać - jako kraje o wysokim HDI będą zapewne kierować się w stronę zwiększenia użycia energii odnawialnej, ale z powodu wysokiego Współczynnika Giniego będzie wychodzić im to lepiej z powodów wyżej wspomnianych. Pragnę to sprawdzić - *a badać będę rok 2015*.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_5 <- My_data %>%
+  filter(Year == 2015)
+Quantile_gini <- quantile(My_data_5$Gini_val, probs = c(0.25, 0.5, 0.75))
+My_data_5 <- My_data %>%
+  filter(Year == 2015, HDI_val > 0.7) %>%
+  group_by(Continent) %>%
+  mutate(ren_mean = mean(Ren_eng_consump_perc)) %>%
+  ungroup() %>%
+  filter(Gini_val > Quantile_gini[3])
+
+Kraje <- unique(My_data_5$country)
+Kraje
+```
+
+Absolutnie nie dziwi mnie fakt, że większość tych krajów jest z Ameryk. Dobrze znam ich sytuację społeczną i ich rozbudowane slumsy zwane lokalnie *favelami*. Skupię się więc na Ameryce Południowej - czyli tam, gdzie favele występują często.
+
+Najpierw jednak pokażę sytuację we wszystkich krajach.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_5 <- My_data_5 %>%
+  filter(Continent == "Ameryki") %>%
+  mutate(ren_dif = Ren_eng_consump_perc - ren_mean,
+         ren_col = ifelse(ren_dif>0, "A", "B")) %>%
+  arrange(desc(ren_dif)) %>%
+  mutate(country_f = factor(country, levels = country))
+
+ggplot(My_data_5, aes(x = country_f, y = ren_dif)) +
+  geom_bar(stat='identity', aes(fill=ren_col), width=.5)  +
+  scale_fill_manual(name="Odchylenie", 
+                    labels = c("Powyżej średniej", "Poniżej średniej"), 
+                    values = c("A"="#009E73", "B"="#D55E00")) + 
+  theme_bw() +
+  coord_flip() +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o 
+       wysokim HDI i wysokim Współczynniku Giniego",
+       subtitle = "Odchylenie przedstawione w punktach procentowych") +
+  ylab("Odchylenie") +
+  xlab("Kraj") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+**Jak widać moja hipoteza nie jest poprawna**, nie we wszystkich krajach istnieje ta zależność, o której wspomniałam. Chciałabym jednak przybliżyć sytuację w Ameryce Południowej.
+
+*Kod analogiczny więc go pomijam*
+
+```{r out.width = '70%', fig.align = 'center', echo = FALSE}
+Kraje_ameryki_północnej <- c("Dominican Republic", "Jamaica", "Cuba", "Barbados", "Mexico", "Panama")
+My_data_5 <- My_data_5 %>%
+  filter(Continent == "Ameryki", !country %in% Kraje_ameryki_północnej) %>%
+  mutate(ren_dif = Ren_eng_consump_perc - ren_mean,
+         ren_col = ifelse(ren_dif>0, "A", "B")) %>%
+  arrange(desc(ren_dif)) %>%
+  mutate(country_f = factor(country, levels = country))
+
+ggplot(My_data_5, aes(x = country_f, y = ren_dif)) +
+  geom_bar(stat='identity', aes(fill=ren_col), width=.5)  +
+  scale_fill_manual(name="Odchylenie", 
+                    labels = c("Powyżej średniej", "Poniżej średniej"), 
+                    values = c("A"="#009E73", "B"="#D55E00")) + 
+  theme_bw() +
+  coord_flip() +
+  labs(title = "Użycie odnawialnych źródeł energii w krajach o 
+       wysokim HDI i wysokim Współczynniku Giniego",
+       subtitle = "Odchylenie przedstawione w punktach procentowych") +
+  ylab("Odchylenie") +
+  xlab("Kraj") + 
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"))
+```
+
+Jak widać poza Wenezuelą i Ekwadorem kraje Ameryki Południowej mają większe użycie energii odnawialnej niż ich regionalna średnia. Biorąc pod uwagę Wenezuelę i jej galopującą inflację i powszechną biedę w państwie to nie dziwi mnie, że kraj ten zaniża średnią. 
+
+Dodatkowo w Ameryce Południowej istnieje wiele ruchów środowiskowych oraz nacisków ze strony rdzennych plemion, co zmusza państwa do poszanowania środowiska naturalnego i zwiększenia użycia energii odnawialnej.
+
+### Kraje w Azji o wysokiej emisji dwutlenku węgla będą miały mniejszą oczekiwaną długość życia niż kraje podobne pod względem rozwinięcia i zamożności.
+
+**Wysoka emisja dwutlenku węgla w krajach prowadzi do rozwijania się chorób i infekcji układu oddechowego u obywateli.** Istnieje wiele badań mówiących ile życia traci przeciętny Krakowianin przez życie w Krakowie, dlatego sprawdzę, jak to się odnosi do krajów z mojego zbioru danych. Oczywiście średnia długość życia wynika nie tylko z otaczającego nas środowiska, ale i rozwinięcia kraju, nierówności społecznych, kultura, itp., dlatego badać będę kraje o podobnym stopniu rozwinięcia (HDI wysokie) i bogactwa (powyżej mediany) na rok badania, oraz posiadania podobnej kultury. **Wiadomo też, że emisja dwutlenku węgla zdecydowanie wpływa na długość życia**, ale chcę zobaczyć czy zaobserwować można krajowe skutki tejże emisji, a nie tylko miejscowe, jak na przykład na terenie danego miasta.
+
+W Azji zanieczyszczenie powietrza często jest rozłożone na cały kraj - tzn. nie występują punktowe ogniska emisji. Jest to dość smutne, ale dzięki temu badać mogę wpływ emisji na długość życia wszystkich obywateli. 
+
+Będzie to moja ostatnia hipoteza dotycząca wszystkich krajów, bądź ich grup na bazie kontynentów czy też stopnia rozwoju. W ostatnich dwóch hipotezach chciałabym skupić się na krajach indywidualnych - m.in Polsce.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_6 <- My_data %>%
+  filter(Continent == "Azja", Year == 2015, HDI_val > 0.7)
+Quantile <- quantile(My_data_6$PKB_per_cap_val, 0.5)
+
+ggplot(My_data_6, aes(y = CO2_emission_tpp, x = PKB_per_cap_val, color = Life_exp_val)) + 
+  geom_point(size = 3) +
+  theme_bw() +
+  labs(title = "Oczekiwana długość życia w zależności od 
+       emisji dwutlenku węgla i PKB per capita",
+       color = "Oczekiwana długość życia")+
+  ylab("Emisja dwutlenku węgla per capita (t)") +
+  xlab("PKB per capita") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold")) +
+  geom_vline(xintercept=as.numeric(Quantile), 
+             linetype='dotted', col = 'red', size = 1.5) +
+  annotate("text", x = as.numeric(Quantile), y = 30, 
+           label = "Mediana PKB", vjust = -0.5, angle = 90, col = "red")
+```
+
+W krajach zamożniejszych (na prawo od narysowanej linii) ewidentnie widać, że długość życia jest większa tam, gdzie emisja dwutlenku węgla jest mniejsza. Oczywiście, jak już wcześniej wspomniałam, na długość życia przekłada się wiele czynników, ale myslę że mogę zaryzykować stwierdzenie, że mniejsza emisja dwutlenku węgla per capita wpływa w azjatyckich krajach zamożniejszych na zwiększenie oczekiwanej długości życia. 
+
+### Stany Zjednoczone wyjmują dane z kontekstu, gdy wskazują Chiny jako przyczynę zanieczyszczania środowiska, a same tak naprawdę nie są lepsze.
+
+Jest to moja oficjalna teoria spiskowa, którą pragnę teraz sprawdzić. Z zaciekawieniem przyglądam się politycznym przepychankom między Stanami Zjednoczonymi, a Chinami - zwłaszcza jeśli chodzi o kwestię środowiska naturalnego. Sprawdzę więc teraz nurtujące mnie pytanie: *Czy naprawdę Chiny są gorsze?*. Sprawdzać będę emisję dwutlenku węgla per capita oraz użycie energii odnawialnej.  
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_7 <- My_data %>%
+  filter(country %in% c("China", "United States")) %>%
+  mutate(CO2_total = CO2_emission_tpp * Pop_val / 1000000000)
+
+ggplot(My_data_7, aes(x = Year, y = CO2_emission_tpp, color = country)) +
+  geom_line(size = 1.5) +
+  theme_bw() + 
+  scale_color_manual(values = c("United States" = "#56B4E9", "China" = "#009E73")) +
+  labs(title = "Emisja dwutlenku węgla per capita")+
+  xlab("Rok") +
+  ylab("Emisja dwutlenku węgla (t)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title = element_blank())
+
+ggplot(My_data_7, aes(x = Year, y = CO2_total, color = country)) +
+  geom_line(size = 1.5) +
+  theme_bw() + 
+  scale_color_manual(values = c("United States" = "#56B4E9", "China" = "#009E73")) +
+  labs(title = "Emisja dwutlenku węgla",
+       subtitle = "Wyrażona w miliardach ton")+
+  xlab("Rok") +
+  ylab("Emisja dwutlenku węgla (Mld. t)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title = element_blank())
+```
+
+**Jak widać miałam rację jeśli chodzi o emisję dwutlenku węgla.** O ile Chiny posiadają większą emisję ogólną, to należy zauważyć że kraj jest ten dużo większy, co przekłada się na mniejszą emisję per capita. Dodatkowo warto zauważyć, że Stany Zjednoczone od lat zanieczyszczały środowisko, a Chiny dopiero niedawno - bo w 2001 roku - przeżyły swój gwałtowny wzrost, który obecnie jest wyhamowany. Jeśli chodzi o politykę środowiskową Chin to słyszy się o niej wiele dobrego - są one świadome jaki problem stwarzają i starają się to niwelować. Tworzą one wielkie farmy słoneczne, stawiają ogromne hydroelektrownie i elektrownie wiatrowe. Wiadomo, nie jest im łatwo gdyż są najbardziej zaludnionym krajem świata, ale konsekwentnie reagują. Na moim wykresie można dodatkowo zobaczyć, że o ile Stany Zjednoczone widocznie dotknął kryzys finansowy z roku 2007, tak Chiny nie - można doszukać się lekkiego spowoleniania emisji dwutleniku węgla, ale nie jest to tak widoczne jak w Stanach.
+
+Sprawdzę teraz czy Stany Zjednoczone dorównują Chinom jeśli chodzi o użycie energii odnawialnej. 
+*Kod analogiczny, więc go pomijam*
+
+```{r out.width = '70%', fig.align = 'center', echo = FALSE}
+ggplot(My_data_7, aes(x = Year, y = Ren_eng_consump_perc, color = country)) +
+  geom_line(size = 1.5) +
+  theme_bw() + 
+  scale_color_manual(values = c("United States" = "#56B4E9", "China" = "#009E73")) +
+  labs(title = "Użycie energii odnawialnej",
+       subtitle = "Wyrażone w procentach w stosunku całkowitej energii")+
+  xlab("Rok") +
+  ylab("Użycie energii odnawialnej (%)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title = element_blank())
+```
+
+Jak widać nawet **w użyciu energii odnawialnej Stany Zjednoczone nie dorównują Chinom.** O ile przeżyły one znaczny spadek przewidywany przez nagły rozwój państwa, co zauważyłam podczas eksploracji poprzednich hipotez, to nie zeszły one do dna, ale, co zaskakujące nawet zdołały się one odbić i zanotować przyrost. Biorąc pod uwagę ile energii zużywać musi państwo ich rozmiaru, to śmiało można zasugerować, że znacznie przewyższają one Stany Zjednoczone jeśli chodzi o wprowadzanie energii odnawialnej.
+
+Hipotezę uważam za poprawną, o ile można narzekać na Chiny w wielu aspektach, tak nie można im odmówić, że nie starają się one zmniejszyć swojego negatywnego wpływu na środowisko naturalne. 
+
+
+### Polska, tak jak zapowiadali rządzący od paru dobrych lat, zmniejsza emisję dwutlenku węgla per capita i zwiększa używanie odnawialnych źródeł energii.
+
+**Bardzo odważna z mojej strony hipoteza** koncentrująca się na naszej ojczyźnie. Chociaż nie wiem czy chcę poznać jej wyniki i się z nią skonfrontować, to jednak podejmę się tego wyzwania. Z ciekawości przedstawię również średnie Europejskie na dany rok żeby sprawdzić, czy słusznie jesteśmy ciągle obwiniani o zanieczyszczanie Europy.
+
+Najpierw na warsztat wezmę emisję dwutlenku węgla per capita.
+
+```{r out.width = '70%', fig.align = 'center'}
+My_data_8_Europe <- My_data %>%
+  filter(Continent == "Europa") %>%
+  group_by(Year) %>%
+  summarize(CO2_emission_tpp = mean(CO2_emission_tpp),
+         Ren_eng_consump_perc = mean(Ren_eng_consump_perc)) %>%
+  ungroup() 
+
+country <- rep("Europe", 13)
+My_data_8_Europe <- cbind(My_data_8_Europe, country)
+
+My_data_8_Poland <- My_data %>%
+  filter(country == "Poland") %>%
+  select(country, Year, CO2_emission_tpp, Ren_eng_consump_perc)
+
+My_data_8 <- rbind(My_data_8_Poland, My_data_8_Europe)
+
+ggplot(My_data_8, aes(x = Year, y = CO2_emission_tpp, color = country)) +
+  geom_line(size = 1.5) +
+  theme_bw() + 
+  scale_color_manual(values = c("Europe" = "#a7b9c4", "Poland" = "#0072B2")) +
+  labs(title = "Emisja dwutlenku węgla per capita")+
+  xlab("Rok") +
+  ylab("Emisja dwutlenku węgla") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title = element_blank())
+```
+
+Jak widać jest się czym martwić, bo Polska faktycznie znajduje się powyżej europejskiej średniej jeśli chodzi o emisje dwutlenku węgla per capita. Na początku zauważyć można gwałtowny spadek emisji dwutlenku węgla w krajach europejskich. Wiąże się to z upadkiem ZSRR - a wraz z nim ekonomii jego krajów -, który stał na węglu i jego zużyciu.
+
+Ogólnie zauważyć można jedynie jedno **zwiększenie się emisji w okresie 1999-2007**. Warto jednak zauważyć, że w 1999 roku wprowadzono w Unii Europejskiej walutę euro, dodatkowo następował silny wzrost ekonomiczny aż do kryzysu finansowego w 2007 roku, który spowodował jego przyhamowanie i spadek. Do redukcji emisji przyczyniła się również pogoda w 2007 roku, która przyniosła dość ciepłe lato oraz późny (grudzień), ale groźny atak zimy. Po kryzysie PKB znów zaczęło rosnąć, ale w zdecydowanie wolniejszym tempie, co również przyczyniło się do możliwości kontrolowanej redukcji emisji dwutlenku węgla w Europie. Dodatkowo stopniowo nagłaśniano problem jakim jest zanieczyszczone środowisko naturalne. 
+
+Tak czy inaczej, Polska od 2011 roku zmniejszała emisję dwutlenku węgla, **co potwierdza moją hipotezę**. Sprawdzę teraz jak ma się użycie energii odnawialnej.
+
+```{r out.width = '70%', fig.align = 'center', echo = FALSE}
+ggplot(My_data_8, aes(x = Year, y = Ren_eng_consump_perc, color = country)) +
+  geom_line(size = 1.5) +
+  theme_bw() + 
+  scale_color_manual(values = c("Europe" = "#a7b9c4", "Poland" = "#0072B2")) +
+  labs(title = "Użycie energii odnawialnej",
+       subtitle = "Wyrażone w procentach w stosunku całkowitej energii")+
+  xlab("Rok") +
+  ylab("Użycie energii odnawialnej (%)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),
+        legend.title = element_blank())
+```
+
+Jak widać w energii odnawialnej nie ma żadnych rewelacji, notujemy łagodny wzrost jej użycia. Nawet w Polsce, choć znajduje się ona poniżej europejskiej normy, można zobserwować stabilne zwiększanie użycia energii odnawialnej. 
+
+Uważam więc, że moja hipoteza jest **poprawna**. Może nie jesteśmy na średnim poziomie europejskim, ale staramy się zmniejszać emisję i zwiększać użycie odnawialnych źródeł energii.
+
+## Zakończenie
+
+Wybrany przeze mnie temat projektu został oceniony przez moich znajomych jako *depresyjny*, gdyż w ich opinii tylko potwierdzi on, że w praktyce nic nie robimy w kierunku poprawienia stanu naszego ekosystemu. 
+
+Pomimo kilku smutnych wniosków, które musiałam wyciągnąć, to uważam, że dla ludzkości istnieje jeszcze szansa. Kraje Europy idą w kierunku zwiększenia użycia odnawialnych źródeł energii i redukcji emisji dwutlenku węgla, a ich azjatyckie odpowiedniki próbują, mimo zwiększającej się gwałtownie populacji i zapotrzebowania energetycznego, utrzymać poziom użycie odnawialnych źródeł energii i emisji dwutlenku węgla. Sam fakt, że najbardziej zaludniony kraj świata zapowiada neutralność klimatyczną do roku 2050 jest ogromnym sukcesem i daje mi wiarę, że jest dla nas nadzieja. 
+
+Należy dalej zwiększać świadomość ludzi o zagrożeniu jakim jest zanieczyszczenie środowiska naturalnego i liczyć, że czasy zobojętnienia na stopniowe wyniszczenie naszego ekosystemu są już za nami.
+
+
+
