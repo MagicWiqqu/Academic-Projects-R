@@ -1,5 +1,5 @@
 ## Academic-Projects
-This repository contains all of my projects completed for my university degree (Computer Science and Econometrics). As I am studying in Poland, most of them are in Polish. Most of them have knitted R-Markdown html files and are developed in R. 
+This repository contains all of my projects completed for my university degree (Computer Science and Econometrics). As I am studying in Poland, most of them are in Polish. Most of them have knitted R-Markdown HTML files and are developed in R. Some of them have been co-authored, and the co-authors are stated in the reports' title and headers (Word and/or PDF files).
 
 ### Renewable energy [PL - R]
 #### Intro
@@ -13,7 +13,7 @@ Packages needed to knit the file:
 * library(psych)
 * library(ggthemes)
 #### Additional Information
-To knit the file user should change the working directory - second chunk of the code <my_source <- "C:/Users/Admin/Desktop/Renewable_Energy/DANE">. The data I am working with is included in *DANE*. Data comes straight from [Gapminder](https://www.gapminder.org/).
+To knit the file, the user should change the working directory - second chunk of the code <my_source <- "C:/Users/Admin/Desktop/Renewable_Energy/DANE">. The data I am working with is included in *DANE*. Data comes straight from [Gapminder](https://www.gapminder.org/).
 
 ### Data Analysis Tasks [PL - R]
 #### Intro
@@ -24,7 +24,7 @@ Packages needed to knit the file:
 
 ### Statistical Data Analysis [PL - R/Jamovi]
 #### Intro
-Simple statistical analysis for the Titanic dataset. 
+Statistical analysis for the Titanic dataset. 
 #### Packages
 Packages needed to knit the file:
 * library(pROC)
@@ -48,3 +48,13 @@ Packages needed to knit the file:
 * library(psych)
 * library(caret)
 * library(MASS)
+#### Additional Information
+The data has been downloaded from [Kaggle](https://www.kaggle.com/c/titanic/data). Although clean dataset is also included in the files in case the version has been altered on the website.
+
+### Data Analysis in Business [PL - Python]
+#### Intro
+Statistical analysis performed for the Cereals dataset.
+#### Packages
+See requirements.txt file. 
+#### Additional Information
+The dataset has been provided by the professor and is included in the files.
