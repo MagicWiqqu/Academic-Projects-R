@@ -1,0 +1,331 @@
+---
+title: "Projekt 2"
+author: "Wiktoria Arendarczyk"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  out.width = '70%',
+  fig.align = 'center',
+  warning = FALSE,
+  message = FALSE,
+  echo = FALSE
+)
+
+library(pROC)
+library(DescTools)
+library(tidyverse)
+library(scales)
+library(ggplot2)
+library(ggthemes)
+library(kableExtra)
+library(RColorBrewer)
+library(mice)
+library(corrplot)
+library(corrr)
+library(ltm)
+library(caret)
+library(dummy)
+library(ggcorrplot)
+library(FactoMineR)
+library(factoextra)
+library(car)
+library(psych)
+library(caret)
+library(MASS)
+```
+
+<style>
+h1.title{
+  background: #22cc3e; 
+  background: linear-gradient(to right, #22cc3e 0%,#22c4cc 46%,#2250cc 100%);
+  filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#22cc3e', endColorstr='#b522cc',GradientType=1 );
+  color: white;
+  height: 100px;
+  display:flex;
+  align-items: center;
+  justify-content: center;
+  color: #191E63;
+}
+body{
+  color: #252A6F;
+  font-family: Calibri;
+  background-color: #F5F5F5;
+  text-align: justify;
+  font-size: 16px;
+}
+</style>
+
+```{r}
+rm(list = ls())
+Titanic <- read.csv("Titanic.csv")
+```
+
+```{r}
+md.pattern(Titanic)
+summary(Titanic)
+Titanic <- Titanic[, -11]
+```
+
+```{r}
+Titanic <- Titanic %>%
+  filter(Embarked %in% c("C", "Q", "S"))
+```
+
+```{r}
+str(Titanic)
+
+Titanic <- Titanic %>%
+  mutate(Survived = ifelse(Survived == 1, "Yes", "No"),
+         Survived = as.factor(Survived),
+         Pclass = as.factor(Pclass),
+         Sex = as.factor(Sex),
+         Embarked = as.factor(Embarked))
+
+str(Titanic)
+```
+
+```{r}
+ggplot(Titanic, aes(Pclass, Age, color = Pclass)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  xlab("Klasa") +
+  ylab("Wiek")
+```
+
+```{r}
+na_count <- table(Titanic$Pclass, is.na(Titanic$Age))
+na_count
+```
+
+
+```{r}
+# Age_means <- Titanic %>%
+#   group_by(Pclass) %>%
+#   summarize(Age_mean = mean(Age, na.rm = TRUE))
+# 
+# Age_means[,2] <- round(Age_means[,2])
+# 
+# Titanic <- Titanic %>%
+#   mutate(Age = ifelse(
+#     is.na(Age) & Pclass == 1, Age_means[1, 2],
+#     ifelse(
+#       is.na(Age) & Pclass == 2, Age_means[2, 2],
+#       ifelse(is.na(Age) & Pclass == 3, Age_means[3, 2], Age)
+#     )
+#   ),
+#         Age = as.numeric(Age))
+
+Titanic <- na.omit(Titanic[!is.na(Titanic$Age), ])
+
+md.pattern(Titanic)
+
+#write.csv(Titanic, "Titanic_Clean.csv")
+```
+
+```{r}
+ggplot(Titanic, aes(Age)) +
+  geom_histogram(aes(y = ..density..),
+                 colour = "#0E35AB", fill = "#45C8FF") +
+  geom_density(lwd = 1.2,
+               linetype = 2,
+               colour = 2) +
+  theme_bw() +
+  xlab("Wiek") +
+  ylab("Gęstość")
+```
+
+```{r}
+ggplot(Titanic, aes(x = Pclass, fill = factor(Survived, labels = c("Nie", "Tak")))) +
+  geom_bar(position = "fill") +
+  facet_wrap(~Sex, labeller = labeller(Sex = c("female" = "Kobieta", "male" = "Mężczyzna"))) +
+  theme_bw() + 
+  xlab("Klasa") +
+  ylab("Procent") +
+  labs(fill = "Przeżył")
+```
+
+```{r}
+sur <- Titanic %>%
+  group_by(Survived) %>%
+  summarize(n = n(),
+            freq = n/nrow(.) * 100)
+```
+
+```{r}
+Titanic_PCA <- Titanic %>%
+  dplyr::select(Age, Pclass, Fare, SibSp, Parch) %>%
+  mutate(Pclass = as.numeric(Pclass))
+
+corr_Titanic <- cor(Titanic_PCA, method = "spearman")
+ggcorrplot(corr_Titanic)
+
+bart <- cortest.bartlett(corr_Titanic, n = nrow(Titanic_PCA))
+bart
+
+Titanic_PCA_fit <- prcomp(Titanic_PCA, scale = TRUE)
+summary(Titanic_PCA_fit)
+
+Titanic_PCA_fit$rotation[, 1:2]
+var <- get_pca_var(Titanic_PCA_fit)
+var$cos2
+#Titanic_PCA_fit$loadings[, 1:2]
+
+fviz_eig(Titanic_PCA_fit, addlabels = TRUE, ggtheme = theme_bw()) +
+  labs(y = "Procent wyjaśnionej wariancji", x = "Wymiary")
+
+fviz_pca_var(Titanic_PCA_fit, col.var = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), repel = TRUE) +
+  labs(x = "Wymiar 1", y = "Wymiar 2")
+```
+
+```{r}
+set.seed(123)
+Titanic_log <- Titanic[,-c(1, 4, 9)]
+
+summary(Titanic_log)
+```
+
+```{r}
+sample <- Titanic_log$Survived %>%
+  createDataPartition(p = 0.8, list = FALSE)
+
+jamovi <- Titanic_log[sample,]
+#write.csv(Titanic, "Titanic_Train_Jamovi.csv")
+```
+
+```{r}
+contingency_table <- table(Titanic_log$Pclass, Titanic_log$Embarked)
+chi_sq_test <- chisq.test(contingency_table)
+print(chi_sq_test)
+phi_coef <- sqrt(chi_sq_test$statistic/712)
+cramer <- phi_coef / sqrt(2)
+cramer
+```
+
+```{r}
+Titanic_dummy <- dummy(Titanic_log)
+Titanic_dummy <- Titanic_dummy %>%
+  dplyr::select(Pclass_2, Pclass_3, Sex_male, Embarked_Q, Embarked_S)
+
+Titanic_log_raw <- Titanic_log
+Titanic_log <- cbind(Titanic_log, Titanic_dummy)
+Titanic_log <- Titanic_log %>%
+  dplyr::select(Pclass_2, Pclass_3, Sex_male, Survived, Age, SibSp, Embarked_Q, Embarked_S)
+```
+
+```{r}
+train <- Titanic_log[sample, ]
+test <- Titanic_log[-sample,]
+```
+
+```{r}
+model_all <- glm( Survived ~., data = train, family = binomial)
+summary(model_all)
+
+model_in <- glm(Survived ~ 1, data = train, family = binomial)
+
+step <- stepAIC(model_all, scope = model_in, trace = TRUE, direction = "backward")
+
+summary(step)
+
+model_check <- glm( Survived ~ Pclass_2 + Pclass_3 + Sex_male + Age + 
+    SibSp + Embarked_Q + Embarked_S, data = train, family = binomial)
+
+model <- glm( Survived ~ Pclass_2 + Pclass_3 + Sex_male + Age + 
+    SibSp, data = train, family = binomial)
+```
+
+```{r}
+mc <- PseudoR2(model)
+cox <- PseudoR2(model, which = "CoxSnell")
+n <- PseudoR2(model, which = "Nagelkerke")
+```
+
+```{r}
+vif_values <- vif(model)
+print(vif_values)
+```
+
+```{r}
+plot(model)
+```
+
+```{r}
+# Plotting log-odds against independent variable using lowess smoothing
+plot(train$Age, log(model$fitted.values / (1 - model$fitted.values)), 
+     xlab = "Independent Variable", ylab = "Log-Odds", main = "Linearity Check")
+lines(lowess(train$Age, log(model$fitted.values / (1 - model$fitted.values))), col = "red")
+```
+
+```{r}
+# Obtain residuals
+residuals <- residuals(model, type = "deviance")
+
+# Plot residuals against predictor variable
+plot(fitted(model), residuals, xlab = "Predictor Variable", ylab = "Residuals")
+```
+
+```{r}
+probabilities <- predict(model, newdata = test, type = "response")
+predictions <- ifelse(probabilities > 0.5, "Yes", "No")
+
+conf_matrix <- table(Predicted = predictions, Actual = test$Survived)
+conf_plot <- confusionMatrix(conf_matrix, positive = 'Yes')
+print(conf_plot)
+
+
+# Extract confusion matrix as a matrix
+cm <- as.data.frame(conf_plot$table)
+
+# Plot confusion matrix as a heatmap using ggplot2
+ggplot(data = cm, aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = sprintf("%1.0f", Freq)), vjust = 1) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(title = "Confusion Matrix", x = "Predykcja", y = "Prawdziwe")
+```
+
+```{r}
+roc_obj <- roc(test$Survived, probabilities)
+plot(roc_obj, col = "blue", main = "ROC Curve for Logistic Regression")
+
+ggroc(roc_obj, legacy.axes = T, color = 'blue') +
+geom_abline(slope = 1 ,intercept = 0) + # add identity line
+theme(
+panel.background = element_blank(), 
+axis.title.x = element_text(size =18, face = 'bold'),
+axis.title.y = element_text(size =18, face = 'bold'),
+panel.border = element_rect(size = 2, fill = NA), 
+axis.text.x = element_text(size = 14, face ='bold'),
+axis.text.y = element_text(size = 14, face ='bold')) +
+xlab('100% - Specificity (%)') +
+ylab('Sensitivity (%)') +
+scale_x_continuous(breaks = seq(0,1,0.25), labels = seq(0,1,0.25) * 100) + 
+scale_y_continuous(breaks = seq(0,1,0.25), labels = seq(0,1,0.25) * 100)
+
+threshold_coords <- coords(roc_obj)
+```
+
+```{r}
+predictions_new <- ifelse(probabilities > 0.5835370, "Yes", "No")
+
+conf_matrix <- table(Predicted = predictions_new, Actual = test$Survived)
+conf_plot <- confusionMatrix(conf_matrix, positive = 'Yes')
+print(conf_plot)
+```
+
+```{r}
+me_data <- data.frame(Pclass_2 = '1',
+                      Pclass_3 = '0',
+                      Sex_male = '0',
+                      Age = 21.0,
+                      SibSp = 0,
+                      Embarked_Q = '0',
+                      Embarked_S = '0')
+
+me <- predict(model, newdata = me_data, type = "response")
+```
