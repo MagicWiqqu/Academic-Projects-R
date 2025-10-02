@@ -51,7 +51,7 @@ Packages needed to knit the file:
 #### Additional Information
 The data has been downloaded from [Kaggle](https://www.kaggle.com/c/titanic/data). Although clean dataset is also included in the files in case the version has been altered on the website.
 
-### Statistical Data Analysis [PL - Python]
+### Data Analysis in Business [PL - Python]
 #### Intro
 Statistical analysis performed for the Cereals dataset.
 #### Packages
