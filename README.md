@@ -1,4 +1,4 @@
-## Academic-Projects-R
+## Academic-Projects
 This repository contains all of my projects completed for my university degree (Computer Science and Econometrics). As I am studying in Poland, most of them are in Polish. Most of them have knitted R-Markdown html files and are developed in R. 
 
 ### Renewable energy [PL]
